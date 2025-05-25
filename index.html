@@ -1,0 +1,289 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Study Assistant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
+  <div class="container mx-auto p-4 flex-grow">
+    <h1 class="text-3xl font-bold text-center mb-4">AI Study Assistant</h1>
+    
+    <!-- Tab Navigation -->
+    <div class="flex justify-center mb-4">
+      <button class="tab-btn px-4 py-2 mx-2 bg-gray-700 text-gray-100 rounded-lg hover:bg-teal-500 active-tab" data-tab="study">Study Assistant</button>
+      <button class="tab-btn px-4 py-2 mx-2 bg-gray-700 text-gray-100 rounded-lg hover:bg-teal-500" data-tab="planner">Planner</button>
+      <button class="tab-btn px-4 py-2 mx-2 bg-gray-700 text-gray-100 rounded-lg hover:bg-teal-500" data-tab="dictionary">Dictionary</button>
+    </div>
+
+    <!-- Tab Content -->
+    <div id="study" class="tab-content">
+      <textarea id="study-input" class="w-full p-4 bg-gray-800 text-gray-100 rounded-lg h-24 mb-4" placeholder="Enter your text here..."></textarea>
+      <div class="flex justify-center mb-4">
+        <button id="generate-notes" class="px-4 py-2 mx-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Generate Notes</button>
+        <button id="generate-questions" class="px-4 py-2 mx-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Generate Questions</button>
+        <button id="generate-summary" class="px-4 py-2 mx-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Generate Summary</button>
+        <button id="export-pdf" class="px-4 py-2 mx-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Export to PDF</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <h2 class="text-xl font-bold mb-2">Notes</h2>
+          <textarea id="notes-output" class="w-full p-4 bg-gray-800 text-gray-100 rounded-lg h-96" readonly></textarea>
+        </div>
+        <div>
+          <h2 class="text-xl font-bold mb-2">Questions</h2>
+          <textarea id="questions-output" class="w-full p-4 bg-gray-800 text-gray-100 rounded-lg h-96" readonly></textarea>
+        </div>
+        <div>
+          <h2 class="text-xl font-bold mb-2">Summary</h2>
+          <textarea id="summary-output" class="w-full p-4 bg-gray-800 text-gray-100 rounded-lg h-96" readonly></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div id="planner" class="tab-content hidden">
+      <textarea id="planner-input" class="w-full p-4 bg-gray-800 text-gray-100 rounded-lg h-24 mb-4" placeholder="Enter topic and duration..."></textarea>
+      <div class="flex justify-center mb-4">
+        <button id="generate-plan" class="px-4 py-2 mx-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Generate Plan</button>
+        <button id="save-tasks" class="px-4 py-2 mx-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Tasks</button>
+        <button id="load-tasks" class="px-4 py-2 mx-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Load Tasks</button>
+      </div>
+      <div class="bg-gray-800 p-4 rounded-lg">
+        <h2 class="text-xl font-bold mb-2 text-center">Generated Tasks</h2>
+        <div id="task-container" class="space-y-2 max-h-96 overflow-y-auto"></div>
+      </div>
+    </div>
+
+    <div id="dictionary" class="tab-content hidden">
+      <textarea id="dict-input" class="w-full p-4 bg-gray-800 text-gray-100 rounded-lg h-24 mb-4" placeholder="Enter a word..."></textarea>
+      <div class="flex justify-center mb-4">
+        <button id="search-word" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">🔍 Search</button>
+      </div>
+      <textarea id="dict-output" class="w-full p-4 bg-gray-800 text-gray-100 rounded-lg h-96" readonly></textarea>
+    </div>
+  </div>
+
+  <footer class="text-right text-sm text-gray-500 p-4">
+    AI Study Assistant Version 1.5
+  </footer>
+
+  <script>
+    // Tab Switching
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        tabButtons.forEach(btn => btn.classList.remove('active-tab', 'bg-teal-500'));
+        button.classList.add('active-tab', 'bg-teal-500');
+        tabContents.forEach(content => content.classList.add('hidden'));
+        document.getElementById(button.dataset.tab).classList.remove('hidden');
+      });
+    });
+
+    // Placeholder Handling
+    function handlePlaceholder(textarea, placeholder) {
+      textarea.addEventListener('focus', () => {
+        if (textarea.value === placeholder) {
+          textarea.value = '';
+          textarea.classList.remove('text-gray-500');
+        }
+      });
+      textarea.addEventListener('blur', () => {
+        if (!textarea.value) {
+          textarea.value = placeholder;
+          textarea.classList.add('text-gray-500');
+        }
+      });
+    }
+
+    handlePlaceholder(document.getElementById('study-input'), 'Enter your text here...');
+    handlePlaceholder(document.getElementById('planner-input'), 'Enter topic and duration...');
+    handlePlaceholder(document.getElementById('dict-input'), 'Enter a word...');
+
+    // API Calls
+    async function apiCall(endpoint, method, body) {
+      try {
+        const response = await fetch(`http://localhost:5000${endpoint}`, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: body ? JSON.stringify(body) : null,
+        });
+        if (!response.ok) throw new Error('Network response was not ok');
+        return await response.json();
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+        return null;
+      }
+    }
+
+    // Study Assistant
+    document.getElementById('generate-notes').addEventListener('click', async () => {
+      const input = document.getElementById('study-input').value;
+      if (input === 'Enter your text here...') return alert('Please enter text');
+      const result = await apiCall('/generate_notes', 'POST', { text: input });
+      if (result) document.getElementById('notes-output').value = result.content;
+    });
+
+    document.getElementById('generate-questions').addEventListener('click', async () => {
+      const notes = document.getElementById('notes-output').value;
+      if (!notes) return alert('Please generate notes first');
+      const result = await apiCall('/generate_questions', 'POST', { text: notes });
+      if (result) document.getElementById('questions-output').value = result.content;
+    });
+
+    document.getElementById('generate-summary').addEventListener('click', async () => {
+      const notes = document.getElementById('notes-output').value;
+      if (!notes) return alert('Please generate notes first');
+      const result = await apiCall('/generate_summary', 'POST', { text: notes });
+      if (result) document.getElementById('summary-output').value = result.content;
+    });
+
+    document.getElementById('export-pdf').addEventListener('click', async () => {
+      const notes = document.getElementById('notes-output').value;
+      const questions = document.getElementById('questions-output').value;
+      const summary = document.getElementById('summary-output').value;
+      if (!notes && !questions && !summary) return alert('No content to export');
+      const response = await fetch('http://localhost:5000/export_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes, questions, summary }),
+      });
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'study_assistant.pdf';
+        a.click();
+        window.URL.revokeObjectURL(url);
+      } else {
+        alert('Failed to export PDF');
+      }
+    });
+
+    // Planner
+    let tasks = [];
+
+    document.getElementById('generate-plan').addEventListener('click', async () => {
+      const input = document.getElementById('planner-input').value;
+      if (input === 'Enter topic and duration...') return alert('Please enter topic and duration');
+      const result = await apiCall('/generate_plan', 'POST', { text: input });
+      if (result) {
+        tasks = result.tasks.map(task => ({ task, status: 'Undone' }));
+        displayTasks();
+      }
+    });
+
+    document.getElementById('save-tasks').addEventListener('click', async () => {
+      if (!tasks.length) return alert('No tasks to save');
+      const response = await fetch('http://localhost:5000/save_tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tasks),
+      });
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'tasks.json';
+        a.click();
+        window.URL.revokeObjectURL(url);
+      } else {
+        alert('Failed to save tasks');
+      }
+    });
+
+    document.getElementById('load-tasks').addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch('http://localhost:5000/load_tasks', {
+          method: 'POST',
+          body: formData,
+        });
+        if (response.ok) {
+          tasks = await response.json();
+          displayTasks();
+        } else {
+          alert('Failed to load tasks');
+        }
+      };
+      input.click();
+    });
+
+    function displayTasks() {
+      const container = document.getElementById('task-container');
+      container.innerHTML = '';
+      tasks.forEach((task, index) => {
+        const taskDiv = document.createElement('div');
+        taskDiv.className = 'flex justify-between items-center p-2 bg-gray-700 rounded-lg';
+        taskDiv.innerHTML = `
+          <span class="flex-grow">${task.task}</span>
+          <button class="status-btn px-4 py-1 rounded-lg ${task.status === 'Done' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}">
+            ${task.status}
+          </button>
+        `;
+        container.appendChild(taskDiv);
+        taskDiv.querySelector('.status-btn').addEventListener('click', () => {
+          tasks[index].status = tasks[index].status === 'Done' ? 'Undone' : 'Done';
+          displayTasks();
+        });
+      });
+    }
+
+    // Dictionary
+    document.getElementById('search-word').addEventListener('click', async () => {
+      const word = document.getElementById('dict-input').value;
+      if (word === 'Enter a word...') return alert('Please enter a word');
+      const result = await apiCall('/search_word', 'POST', { word });
+      if (result) document.getElementById('dict-output').value = result.content;
+    });
+  </script>
+</body>
+</html>
